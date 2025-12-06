@@ -1,5 +1,33 @@
 import pandas as pd
+import yfinance as yf
 import numpy as np  # nur wenn du numpy Funktionen brauchst
+
+def fundamental_analyse(ticker_symbol):
+    stock = yf.Ticker(ticker_symbol)
+    info = stock.info
+    kgv = info.get("trailingPE")
+    kuv = info.get("priceToSalesTrailing12Months")
+    kbv = info.get("priceToBook")
+    marge = info.get("profitMargins")
+    beta = info.get("beta")
+
+    score = 0
+    if kgv and kgv < 15: score += 20
+    if kuv and kuv < 3: score += 20
+    if marge and marge > 0.15: score += 20
+    if beta and beta < 1.2: score += 20
+    ampel = "🟢" if score >= 60 else "🟡" if score >= 40 else "🔴"
+
+    return {
+        "Aktie": ticker_symbol,
+        "KGV": f"{kgv:.2f}" if kgv else "n/a",
+        "KUV": f"{kuv:.2f}" if kuv else "n/a",
+        "KBV": f"{kbv:.2f}" if kbv else "n/a",
+        "Marge (%)": f"{marge*100:.1f}%" if marge else "n/a",
+        "Beta": f"{beta:.2f}" if beta else "n/a",
+        "Score": score,
+        "Ampel": ampel
+    }
 
 def bollinger_signal(data: pd.DataFrame) -> str:
     """
@@ -242,7 +270,7 @@ def cluster_buy_signal_periods(kaufsignale_df: pd.DataFrame, max_gap_days: int =
     return perioden
 
 
-def evaluate_buy_periods(perioden, full_data, kombiniertes_signal,
+def evaluate_buy_periods(perioden, full_data,
                          Auswertung_tage, min_veraenderung):
     bewertungen = []
 
@@ -290,9 +318,7 @@ def evaluate_buy_periods(perioden, full_data, kombiniertes_signal,
     return bewertungen
 
 
-def evaluate_buy_signals(full_data, kaufsignale_df, kombiniertes_signal,
-                         Auswertung_tage, min_veraenderung,
-                         min_len_window=20, innerhalb_zeitraum=True):
+def evaluate_buy_signals(full_data, kaufsignale_df, Auswertung_tage, min_veraenderung):
     """
     Bewertet einzelne Kaufsignale nach Kursentwicklung.
 
@@ -374,16 +400,15 @@ def analyse_kaufsignal_perioden(full_data: pd.DataFrame,
     perioden = cluster_buy_signal_periods(kaufsignale_df, max_gap_days=5)
 
     # 4. Jede Periode bewerten
-    perioden_bewertung = evaluate_buy_periods(perioden, full_data, kombiniertes_signal,
+    perioden_bewertung = evaluate_buy_periods(perioden, full_data,
                                              Auswertung_tage=Auswertung_tage,
                                              min_veraenderung=min_veraenderung)
 
     # 5. Einzelbewertung (optional)
-    einzelbewertung = evaluate_buy_signals(full_data, kaufsignale_df, kombiniertes_signal,
+    einzelbewertung = evaluate_buy_signals(full_data, kaufsignale_df,
                                            Auswertung_tage=Auswertung_tage,
                                            min_veraenderung=min_veraenderung,
-                                           min_len_window=min_len_window,
-                                           innerhalb_zeitraum=innerhalb_zeitraum)
+                                           )
 
     return {
         "Anzahl_Kaufsignale": len(kaufsignale_df),
