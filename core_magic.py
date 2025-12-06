@@ -17,8 +17,19 @@ def lade_aktien(pfad="Watchlist.txt"):
     if not file.exists():
         st.warning(f"Datei {pfad} wurde nicht gefunden.")
         return []
+
+    aktien = []
     with open(file, "r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip()]
+        for line in f:
+            line = line.strip()
+            if not line or "," not in line:
+                continue
+
+            name, ticker = line.split(",", 1)
+            aktien.append((name.strip(), ticker.strip()))
+
+    return aktien
+
     
 # ------------------------------------------------------
 # Lade Daten
