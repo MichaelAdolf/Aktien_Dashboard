@@ -13,6 +13,7 @@ from core_magic import (
 )
 
 from signals import (
+    fundamental_analyse,
     RSI_signal, 
     macd_signal, 
     adx_signal, 
@@ -25,17 +26,13 @@ from signals import (
 def go_to(page_name):
     st.session_state.page = page_name
 
-def home_page(themen):
+def home_page(watchlist):
     st.title("📈 Aktien-Dashboard")
-    st.write("Wähle eine Aktie aus der Liste:")
+    st.write("Wähle eine Aktie:")
 
-    if not themen:
-        st.error("Keine Themen gefunden. Bitte überprüfe die Datei themen.txt.")
-    else:
-        for name in themen:
-            if st.button(name):
-                go_to(name)
-
+    for name, symbol in watchlist:
+        if st.button(f"{name} ({symbol})"):
+            st.session_state.page = symbol
 
 def aktienseite(symbol): 
     symbol = st.session_state.page
@@ -54,6 +51,8 @@ def aktienseite(symbol):
     except Exception as e:
         st.error(f"Fehler beim Laden der Daten: {e}")
         return
+    
+    data_fund = fundamental_analyse(symbol)
     
     # Einmalige Zeitauswahl oben
     zeitraum = st.sidebar.selectbox("Zeitraum wählen", ["6 Monate", "1 Jahr", "3 Jahre"])
@@ -80,9 +79,9 @@ def aktienseite(symbol):
             value=61,
             step=1
         )
-
+    
     # Heute als Referenzdatum
-    heute = pd.Timestamp.today()
+    #heute = pd.Timestamp.today()
 
     # Startdatum berechnen (heute minus tage)
     startdatum = pd.Timestamp.today(tz=data_full.index.tz) - pd.Timedelta(days=tage)
@@ -94,8 +93,8 @@ def aktienseite(symbol):
     opt = anzeige_optionen_main()
     
     # Tabs definieren
-    tab_overview, tab_charts, tab_ichimoku, tab_fundamentals = st.tabs(
-        ["📈 Übersicht", "📊 Charts", "🌥️ Ichimoku", "🏦 Fundamentaldaten"]
+    tab_overview, tab_signaldetail, tab_charts, tab_ichimoku, tab_fundamentals = st.tabs(
+        ["📈 Übersicht", "🔔Signaldetails", "📊 Charts", "🌥️ Ichimoku", "🏦 Fundamentaldaten"]
     )
 
     with tab_overview:
@@ -116,16 +115,31 @@ def aktienseite(symbol):
         # ---------------------------------------------------------
         with col2:
             with st.container(border=True):
-                st.subheader("Analyse der Signale")
-                zeige_kaufsignal_analyse(data, Auswertung_tage, min_veraenderung)
+                st.subheader("🏦 Fundamental Übersicht:")
+                fundamental_interpretation(data_fund)
 
+                st.subheader("🔄 Swingtrading Übersicht:")
+                zeige_swingtrading_signal(data)
+                zeige_swingtrading_signalauswertung(data, Auswertung_tage, min_veraenderung)
+
+        
+    with tab_signaldetail:
         # ---------------------------------------------------------
         # Unten drunter
         # ---------------------------------------------------------
         with st.container(border=True):
+                st.subheader("Analyse der Signale")
+                zeige_kaufsignal_analyse(data, Auswertung_tage, min_veraenderung)
+
+        with st.container(border=True):
             st.subheader("📊 Übersicht der technischen Signale")
             zeige_technische_signale(data)
-    
+
+        with st.container(border=True):
+                    st.subheader("🏦 Übersicht des Fundamentalsignals")
+                    fundamental_interpretation(data_fund)
+
+
     with tab_charts:
         with st.container(border=True):
             st.subheader("Gesamtübersicht")
@@ -366,6 +380,21 @@ def zeige_fundamentaldaten(symbol):
     except Exception as e:
         st.error(f"Fehler beim Laden der Fundamentaldaten: {e}")
 
+# ------------------------------------------------------------
+# Fundamentaldaten: Score Interpretation
+# ------------------------------------------------------------
+def fundamental_interpretation(result):
+    ampel = result["Ampel"]
+    aktie = result["Aktie"]
+         
+    if ampel == "🟢":
+        st.write(f"**{ampel}** - **{aktie}** zeigt starke fundamentale Kennzahlen. Potenzial für langfristiges Wachstum.")
+    elif ampel == "🟡":
+        st.write(f"**{ampel}** - **{aktie}** ist mittelmäßig bewertet. Beobachtung empfohlen.")
+    else:  # 🔴
+        st.write(f"**{ampel}** - **{aktie}** zeigt schwache fundamentale Kennzahlen. Vorsicht bei Kaufentscheidungen.")
+
+
 def zeige_technische_signale(data):
     """Berechnet technische Signale, zeigt Übersicht und das kombinierte Handelssignal."""
 
@@ -398,6 +427,56 @@ def zeige_technische_signale(data):
     with st.expander("Details zu den Einzelsignalen"):
         for name, sig in alle_signale.items():
             st.write(f"**{name}**: {sig}")
+
+def zeige_swingtrading_signal(data):
+    # Kombiniertes Signal berechnen
+    gesamt_signal, alle_signale = kombiniertes_signal(data)
+
+    st.write(gesamt_signal)
+
+def zeige_swingtrading_signalauswertung(data, Auswertung_tage, min_veraenderung):
+    """
+    Führt die Analyse der Kaufsignal-Perioden durch
+    und zeigt nur die prozentzele trefferquote in Streamlit an.
+    """
+
+    # Analyse aus Kernfunktion laden
+    analyse_ergebnis = analyse_kaufsignal_perioden(data, Auswertung_tage, min_veraenderung)
+
+    # Perioden-Bewertung prüfen
+    if "Perioden_Bewertung" not in analyse_ergebnis:
+        st.info("Keine Perioden-Bewertung verfügbar.")
+        return
+
+    df_details = pd.DataFrame(analyse_ergebnis["Perioden_Bewertung"])
+    df_details.columns = ["Start", "Ende", "Signal", "Wert1", "Wert2", "Beschreibung", "ExtraInfo"]
+
+    # Signal in Bool umwandeln
+    df_details["Signal"] = df_details["Signal"].astype(str).str.upper() == "TRUE"
+
+    # Start-Datum als datetime
+    df_details["Start"] = pd.to_datetime(df_details["Start"])
+
+    # Ende-Datum als datetime
+    df_details["Ende"] = pd.to_datetime(df_details["Ende"])
+
+    # letztes Kursdatum
+    letztes_datum = data.index[-1]
+
+    # Ende + Bewertungsdauer = Zeitpunkt, ab dem man die Periode werten darf
+    df_details["Bewertung_fertig_ab"] = df_details["Ende"] + pd.Timedelta(days=Auswertung_tage)
+
+    # Perioden klassifizieren
+    df_abgeschlossen = df_details[df_details["Bewertung_fertig_ab"] <= letztes_datum]
+
+    # Neue korrekte Trefferquote berechnen
+    gesamt = len(df_abgeschlossen)
+    if gesamt > 0:
+        prozent_true = (df_abgeschlossen["Signal"].sum() / gesamt) * 100
+    else:
+        prozent_true = 0
+
+    st.metric("Trefferquote (nur abgeschlossene Perioden)", f"{prozent_true:.2f} %")
 
 def zeige_kaufsignal_analyse(data, Auswertung_tage, min_veraenderung):
     """
