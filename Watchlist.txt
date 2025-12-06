@@ -1,8 +1,11 @@
-AAPL
-MSFT
-TSLA
-GOOGL
-NVDA
-DKIA.F
-DEFT
-SRT.DE
+McDonald's,MCD
+SAP SE,SAP
+Rheinmetall,RHM.DE
+GFL Environmental,GFL
+Meta Platforms,META
+Tesla,TSLA
+NVIDIA,NVDA
+Daiichi Sankyo,DKIA.F
+DeFi Technologies,DEFT
+Sartorius AG,SRT.DE
+Sartorius Stedim Biotech S.A.,DIM.PA
