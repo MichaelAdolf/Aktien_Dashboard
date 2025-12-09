@@ -9,7 +9,9 @@ from ta.momentum import StochasticOscillator
 from core_magic import (
     lade_daten_aktie,
     berechne_indikatoren,
-    lade_fundamentaldaten
+    lade_fundamentaldaten,
+    klassifiziere_aktie,
+    erklaere_kategorie
 )
 
 from signals import (
@@ -20,7 +22,10 @@ from signals import (
     stochastic_signal, 
     bollinger_signal,
     kombiniertes_signal,
-    analyse_kaufsignal_perioden
+    analyse_kaufsignal_perioden,
+    lade_analystenbewertung,
+    berechne_rating_bar,
+    zeichne_rating_gauge
 )
 
 def go_to(page_name):
@@ -51,46 +56,23 @@ def aktienseite(symbol):
     except Exception as e:
         st.error(f"Fehler beim Laden der Daten: {e}")
         return
-    
-    data_fund = fundamental_analyse(symbol)
-    
-    # Einmalige Zeitauswahl oben
-    zeitraum = st.sidebar.selectbox("Zeitraum wählen", ["6 Monate", "1 Jahr", "3 Jahre"])
-    period_map = {
-        "6 Monate": 180,
-        "1 Jahr": 365,
-        "3 Jahre": 1095
-    }
-    # Zeitraum als Anzahl Tage, z.B. 90
-    tage = period_map[zeitraum]
+    fundamentaldaten = lade_fundamentaldaten(symbol)
+    data_fund = fundamental_analyse(fundamentaldaten, symbol)
+    analysten_daten = lade_analystenbewertung(symbol)
+    summary_df = analysten_daten["summary"]
+    rating_counts = berechne_rating_bar(summary_df)
+    klassifikation = klassifiziere_aktie(symbol, data_full, fundamentaldaten)
+    erklaerung = erklaere_kategorie(klassifikation["Kategorie"])
 
-    min_veraenderung = st.sidebar.slider(
-            "📈 Mindestkursanstieg (%)",
-            min_value=0.0,
-            max_value=0.3,
-            value=0.08,
-            step=0.01
-        )
     
-    Auswertung_tage = st.sidebar.slider(
-            "📅 Auswertung-Tage für Performance-Auswertung",
-            min_value=10,
-            max_value=200,
-            value=61,
-            step=1
-        )
-    
-    # Heute als Referenzdatum
-    #heute = pd.Timestamp.today()
-
+    # Sidebar-Parameter laden
+    tage, min_veraenderung, Auswertung_tage = lade_sidebar_parameter()
+    opt = anzeige_optionen_main()
+        
     # Startdatum berechnen (heute minus tage)
     startdatum = pd.Timestamp.today(tz=data_full.index.tz) - pd.Timedelta(days=tage)
-
     # Daten filtern, nur Daten ab Startdatum behalten
     data = data_full.loc[data_full.index >= startdatum]
-
-    # Indikatoren berechnen
-    opt = anzeige_optionen_main()
     
     # Tabs definieren
     tab_overview, tab_signaldetail, tab_charts, tab_ichimoku, tab_fundamentals = st.tabs(
@@ -98,8 +80,7 @@ def aktienseite(symbol):
     )
 
     with tab_overview:
-
-        # --- 3 Spalten Layout ---
+        # --- 2 Spalten Layout ---
         col1, col2 = st.columns([2, 1])
 
         # ---------------------------------------------------------
@@ -107,7 +88,6 @@ def aktienseite(symbol):
         # ---------------------------------------------------------
         with col1:
             with st.container(border=True):
-                st.subheader("Hauptchart")
                 plot_hautpchart(data, symbol, opt, 1)
 
         # ---------------------------------------------------------
@@ -115,30 +95,76 @@ def aktienseite(symbol):
         # ---------------------------------------------------------
         with col2:
             with st.container(border=True):
+                st.subheader("Experteneinschätzung:")
+                if summary_df is not None:
+                    zeichne_rating_gauge(rating_counts)
+
+                st.subheader("📌 Klassifizierung der Aktie:")
+                st.metric("Aktien-Kategorie", klassifikation["Kategorie"])
+                with st.expander("Details zur Aktuen-Kathegorie:"):
+                    st.write(erklaerung)
+         # --- 2 Spalten Layout ---
+        col1, col2 = st.columns([2, 1])
+
+        # ---------------------------------------------------------
+        # 1️⃣ LINKE SPALTE
+        # ---------------------------------------------------------
+        with col1:
+            with st.container(border=True):
                 st.subheader("🏦 Fundamental Übersicht:")
-                fundamental_interpretation(data_fund)
+                fundamental_summary(data_fund)
 
                 st.subheader("🔄 Swingtrading Übersicht:")
                 zeige_swingtrading_signal(data)
                 zeige_swingtrading_signalauswertung(data, Auswertung_tage, min_veraenderung)
 
-        
+        # ---------------------------------------------------------
+        # 2️⃣ RECHTE SPALTE
+        # ---------------------------------------------------------
+        with col2:
+            beispiel_kachel() 
+
+
+
     with tab_signaldetail:
         # ---------------------------------------------------------
         # Unten drunter
         # ---------------------------------------------------------
         with st.container(border=True):
-                st.subheader("Analyse der Signale")
-                zeige_kaufsignal_analyse(data, Auswertung_tage, min_veraenderung)
+            st.subheader("Analyse der Signale")
+            zeige_kaufsignal_analyse(data, Auswertung_tage, min_veraenderung)
+
+        with st.container(border=True):
+            analyse_ergebnis = analyse_kaufsignal_perioden(data, Auswertung_tage, min_veraenderung)
+            # macht es nicht Sinn, die folgende Formatierung in die Funktion mit aufzunehmen?
+            df_details = pd.DataFrame(analyse_ergebnis["Perioden_Bewertung"])
+            df_details.columns = ["Start", "Ende", "Signal", "Wert1", "Wert2", "Beschreibung", "ExtraInfo"]
+            df_details["Signal"] = df_details["Signal"].astype(str).str.upper() == "TRUE"
+            df_details["Start"] = pd.to_datetime(df_details["Start"])
+            df_details["Ende"] = pd.to_datetime(df_details["Ende"])
+            st.subheader("Kennzeichnung der Perioden")
+            plot_priodenchart(data, symbol, opt, 1, kaufperioden=df_details)
 
         with st.container(border=True):
             st.subheader("📊 Übersicht der technischen Signale")
             zeige_technische_signale(data)
 
         with st.container(border=True):
-                    st.subheader("🏦 Übersicht des Fundamentalsignals")
-                    fundamental_interpretation(data_fund)
+            st.subheader("🏦 Übersicht des Fundamentalsignals")
+            fundamental_interpretation(data_fund)
+    
+        if summary_df is not None:
+            with st.container(border=True):
+                zeichne_rating_bar(rating_counts)
 
+        else:
+            st.info("Keine Analystenbewertungen verfügbar.")
+
+        rating_counts = berechne_rating_bar(summary_df)
+
+        with st.container(border=True):
+                    st.subheader("Übersicht der Analystenbewertung")
+                    zeige_analystenbewertung(symbol)
 
     with tab_charts:
         with st.container(border=True):
@@ -203,7 +229,35 @@ def aktienseite(symbol):
             # Fundamentaldaten
             zeige_fundamentaldaten(symbol)
 
-            
+# ------------------------------
+# Sidebar: Parameter laden
+# ------------------------------
+def lade_sidebar_parameter():
+    zeitraum = st.sidebar.selectbox("Zeitraum wählen", ["6 Monate", "1 Jahr", "3 Jahre"])
+    period_map = {
+        "6 Monate": 180,
+        "1 Jahr": 365,
+        "3 Jahre": 1095
+    }
+    tage = period_map[zeitraum]
+
+    min_veraenderung = st.sidebar.slider(
+        "📈 Mindestkursanstieg (%)",
+        min_value=0.0,
+        max_value=0.3,
+        value=0.08,
+        step=0.01
+    )
+
+    auswertung_tage = st.sidebar.slider(
+        "📅 Auswertung-Tage für Performance-Auswertung",
+        min_value=10,
+        max_value=200,
+        value=61,
+        step=1
+    )
+
+    return tage, min_veraenderung, auswertung_tage
 
 def anzeige_optionen_main():
     return {
@@ -224,7 +278,7 @@ def plot_hautpchart (data, symbol, opt, version):
     if opt["ma10"]:
         fig.add_trace(go.Scatter(x=data.index, y=data["MA10"], mode="lines", name="MA10"))
     if opt["ma50"]:
-                fig.add_trace(go.Scatter(x=data.index, y=data["MA50"], mode="lines", name="MA50"))
+        fig.add_trace(go.Scatter(x=data.index, y=data["MA50"], mode="lines", name="MA50"))
 
     if opt["bollinger"]: #and "BBIh_Upper" in data.columns and "BB_Lower" in data.columns:
         fig.add_trace(go.Scatter(x=data.index, y=data["BB_Upper"], mode="lines", line=dict(dash='dash'), name="BB Oberband"))
@@ -236,7 +290,7 @@ def plot_hautpchart (data, symbol, opt, version):
     #        if col in data.columns:
     #            fig.add_trace(go.Scatter(x=data.index, y=data[col], mode="lines", line=dict(dash='dot', color=color), name=name))
     fig.update_layout(xaxis_title="Datum", yaxis_title="Preis (USD)")
-    st.subheader(f"{symbol} Kurs & Indikatoren")
+    st.subheader(f"{symbol} Kurs")
     st.plotly_chart(fig, use_container_width=True, key=f"hauptchart_{version}")
 
 
@@ -381,37 +435,153 @@ def zeige_fundamentaldaten(symbol):
         st.error(f"Fehler beim Laden der Fundamentaldaten: {e}")
 
 # ------------------------------------------------------------
+# Fundamentaldaten: Summary
+# ------------------------------------------------------------
+def fundamental_summary(result):
+    ampel = result["Ampel"]
+    score = result["Score"]
+
+    # Ampel-Interpretation
+    if ampel == "🟢":
+        st.markdown(
+            f"""
+            **{ampel} Sehr solide Fundamentaldaten (Score: {score}/100)**  
+            Die Aktie zeigt in mehreren zentralen Bereichen überzeugende Werte.  
+            Dies spricht für eine **attraktive Bewertung** und ein **günstiges Risiko-Rendite-Verhältnis**.
+            """
+        )
+    elif ampel == "🟡":
+        st.markdown(
+            f"""
+            **{ampel} Neutrale Fundamentaldaten (Score: {score}/100)**  
+            Die Kennzahlen sind gemischt. Einige Bereiche schneiden gut ab, andere schwächer.  
+            Eine **Beobachtung** oder **Einstieg bei besserer Bewertung** kann sinnvoll sein.
+            """
+        )
+    else:
+        st.markdown(
+            f"""
+            **{ampel} Schwache Fundamentaldaten (Score: {score}/100)**  
+            Die Aktie weist mehrere kritische Bewertungs- oder Risikofaktoren auf.  
+            Eine Investition sollte nur nach tieferer Analyse erwogen werden.
+            """
+        )
+
+# ------------------------------------------------------------
 # Fundamentaldaten: Score Interpretation
 # ------------------------------------------------------------
 def fundamental_interpretation(result):
-    ampel = result["Ampel"]
     aktie = result["Aktie"]
-         
-    if ampel == "🟢":
-        st.write(f"**{ampel}** - **{aktie}** zeigt starke fundamentale Kennzahlen. Potenzial für langfristiges Wachstum.")
-    elif ampel == "🟡":
-        st.write(f"**{ampel}** - **{aktie}** ist mittelmäßig bewertet. Beobachtung empfohlen.")
-    else:  # 🔴
-        st.write(f"**{ampel}** - **{aktie}** zeigt schwache fundamentale Kennzahlen. Vorsicht bei Kaufentscheidungen.")
+    ampel = result["Ampel"]
 
+    kgv = result["KGV"]
+    kuv = result["KUV"]
+    kbv = result["KBV"]
+    marge = result["Marge (%)"]
+    beta = result["Beta"]
+    score = result["Score"]
+
+    st.subheader(f"Fundamentale Einschätzung: {aktie}")
+
+    # Ampel-Interpretation
+    if ampel == "🟢":
+        st.markdown(
+            f"""
+            **{ampel} Sehr solide Fundamentaldaten (Score: {score}/100)**  
+            Die Aktie zeigt in mehreren zentralen Bereichen überzeugende Werte.  
+            Dies spricht für eine **attraktive Bewertung** und ein **günstiges Risiko-Rendite-Verhältnis**.
+            """
+        )
+    elif ampel == "🟡":
+        st.markdown(
+            f"""
+            **{ampel} Neutrale Fundamentaldaten (Score: {score}/100)**  
+            Die Kennzahlen sind gemischt. Einige Bereiche schneiden gut ab, andere schwächer.  
+            Eine **Beobachtung** oder **Einstieg bei besserer Bewertung** kann sinnvoll sein.
+            """
+        )
+    else:
+        st.markdown(
+            f"""
+            **{ampel} Schwache Fundamentaldaten (Score: {score}/100)**  
+            Die Aktie weist mehrere kritische Bewertungs- oder Risikofaktoren auf.  
+            Eine Investition sollte nur nach tieferer Analyse erwogen werden.
+            """
+        )
+
+    # Detailanalyse
+    st.markdown("### Detailanalyse der Kennzahlen")
+
+    def bullet(text, value):
+        return f"- **{text}:** {value}"
+
+    st.markdown(
+        "\n".join([
+            bullet("KGV (Bewertung Gewinn)", kgv),
+            bullet("KUV (Bewertung Umsatz)", kuv),
+            bullet("KBV (Bewertung Substanz)", kbv),
+            bullet("Gewinnmarge", marge),
+            bullet("Beta (Risiko/Volatilität)", beta),
+        ])
+    )
+
+    # Einordnung der Kennzahlen
+    st.markdown("### Kurzinterpretation der Faktoren")
+
+    interpretation = []
+
+    # KGV
+    try:
+        kgv_val = float(kgv)
+        if kgv_val < 15:
+            interpretation.append("• **KGV niedrig:** Die Aktie ist im Vergleich zum Gewinn günstig bewertet.")
+        elif kgv_val > 35:
+            interpretation.append("• **KGV sehr hoch:** Markt erwartet starkes Wachstum – oder Aktie ist überbewertet.")
+        else:
+            interpretation.append("• **KGV neutral:** Bewertung im marktüblichen Bereich.")
+    except:
+        pass
+
+    # KUV
+    try:
+        kuv_val = float(kuv)
+        if kuv_val < 3:
+            interpretation.append("• **KUV attraktiv:** Umsatzbewertung spricht für solide Bewertung.")
+        else:
+            interpretation.append("• **KUV erhöht:** Markt zahlt Aufpreis für Wachstum oder Marke.")
+    except:
+        pass
+
+    # Marge
+    try:
+        marge_val = float(marge.replace("%",""))
+        if marge_val > 15:
+            interpretation.append("• **Hohe Marge:** Starkes, profitables Geschäftsmodell.")
+        else:
+            interpretation.append("• **Niedrige Marge:** Wettbewerb hoch oder Geschäftsmodell wenig profitabel.")
+    except:
+        pass
+
+    # Beta
+    try:
+        beta_val = float(beta)
+        if beta_val < 1:
+            interpretation.append("• **Niedriges Beta:** Aktie schwankt weniger als der Markt (geringeres Risiko).")
+        else:
+            interpretation.append("• **Hohes Beta:** Überdurchschnittliche Schwankung → höheres Risiko.")
+    except:
+        pass
+
+    st.markdown("\n".join(interpretation))
 
 def zeige_technische_signale(data):
-    """Berechnet technische Signale, zeigt Übersicht und das kombinierte Handelssignal."""
-
-    # Einzel-Signale berechnen
-    rsi_sig = RSI_signal(data)
-    macd_sig = macd_signal(data)
-    adx_sig = adx_signal(data)
-    stoch_sig = stochastic_signal(data)
-    boll_sig = bollinger_signal(data)
-
     # Übersichtstabelle der Einzel-Signale
     df_signale = pd.DataFrame({
-        "Bollinger": [boll_sig],
-        "RSI": [rsi_sig],
-        "MACD": [macd_sig],
-        "ADX": [adx_sig],
-        "Stochastic": [stoch_sig]
+        "Bollinger": [bollinger_signal(data)],
+        "RSI": [RSI_signal(data)],
+        "MACD": [macd_signal(data)],
+        "ADX": [adx_signal(data)],
+        "Stochastic": [stochastic_signal(data)]
     })
 
     st.table(df_signale)
@@ -540,3 +710,124 @@ def zeige_kaufsignal_analyse(data, Auswertung_tage, min_veraenderung):
             st.dataframe(df_tmp)
         else:
             st.success("Alle abgeschlossenen Perioden wurden ausgewertet – keine offenen Perioden vorhanden.")
+
+def plot_priodenchart(data, symbol, opt, version, kaufperioden=None):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=data.index, y=data["Close"], mode="lines", name="Schlusskurs", line=dict(color="blue")))
+
+    if opt["bollinger"]:
+        fig.add_trace(go.Scatter(x=data.index, y=data["BB_Upper"], mode="lines", line=dict(dash='dash'), name="BB Oberband"))
+        fig.add_trace(go.Scatter(x=data.index, y=data["BB_Lower"], mode="lines", line=dict(dash='dash'), name="BB Unterband"))
+
+    # Kaufperioden als grüne Bereiche einzeichnen
+    if kaufperioden is not None and not kaufperioden.empty:
+        for _, row in kaufperioden.iterrows():
+            if row["Signal"]:  # Nur positive Kaufperioden
+                fig.add_vrect(
+                    x0=row["Start"],
+                    x1=row["Ende"],
+                    fillcolor="green",
+                    opacity=0.2,
+                    layer="below",
+                    line_width=0,
+                )
+                # Optional: Kursverlauf in der Kaufperiode grün färben
+                periode_mask = (data.index >= row["Start"]) & (data.index <= row["Ende"])
+                fig.add_trace(go.Scatter(
+                    x=data.index[periode_mask],
+                    y=data["Close"][periode_mask],
+                    mode="lines",
+                    line=dict(color="green", width=3),
+                    name="Kaufperiode",
+                    showlegend=False
+                ))
+
+    fig.update_layout(xaxis_title="Datum", yaxis_title="Preis (USD)")
+    st.plotly_chart(fig, use_container_width=True, key=f"Periodenchart_{version}")
+
+def zeige_analystenbewertung(symbol):
+    data = lade_analystenbewertung(symbol)
+
+    st.markdown("<div class='kachel'>", unsafe_allow_html=True)
+    st.markdown("### 🧠 Analystenbewertungen")
+
+    # 🟦 Zusammenfassung (Buy/Hold/Sell)
+    if data["summary"] is not None:
+        st.markdown("#### 📊 Rating-Übersicht")
+        st.table(data["summary"])
+    else:
+        st.info("Keine Rating-Übersicht verfügbar.")
+
+    # 🟪 Historische Empfehlungen (Buy/Hold/Sell)
+    if data["recommendations"] is not None:
+        st.markdown("#### 🕒 Historische Empfehlungen")
+        st.dataframe(data["recommendations"].tail(20))
+    else:
+        st.info("Keine historischen Empfehlungen verfügbar.")
+
+    # 🟧 EPS & Wachstumsprognosen
+    if data["analysis"] is not None:
+        st.markdown("#### 📈 Analysten-Prognosen (EPS, Revenue, Growth)")
+        st.dataframe(data["analysis"])
+    else:
+        st.info("Keine detaillierten Analystenanalysen verfügbar.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def zeichne_rating_bar(rating_counts):
+    if rating_counts is None: 
+        return
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=list(rating_counts.keys()),
+        y=list(rating_counts.values()),
+        text=list(rating_counts.values()),
+        textposition="auto"
+    ))
+
+    fig.update_layout(
+        title="Analysten Rating-Verteilung",
+        xaxis_title="Kategorie",
+        yaxis_title="Anzahl"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+def beispiel_kachel():
+    st.subheader("📊 Beispiel-Kachel mit Grafik")
+    # Container für die Kachel mit etwas Styling
+    with st.container():
+        st.markdown("""
+        <div style="
+            background-color: #f0f2f6;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 3px 3px 10px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: auto;
+            ">
+            <h3 style="color:#333; font-weight:700;">Aktien Kursverlauf</h3>
+            <p style="color:#666;">Hier ein Beispielchart mit Zufallsdaten.</p>
+        """, unsafe_allow_html=True)
+
+        # Plotly Beispielchart
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=[1, 2, 3, 4, 5],
+            y=[10, 15, 13, 17, 14],
+            mode='lines+markers',
+            line=dict(color='royalblue', width=3),
+            marker=dict(size=8)
+        ))
+        fig.update_layout(
+            margin=dict(l=0, r=0, t=0, b=0),
+            height=250,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(255,255,255,1)',
+        )
+
+        #st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
