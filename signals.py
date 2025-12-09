@@ -1,30 +1,82 @@
 import pandas as pd
 import yfinance as yf
 import numpy as np  # nur wenn du numpy Funktionen brauchst
+import plotly.graph_objects as go
+import streamlit as st
 
-def fundamental_analyse(ticker_symbol):
-    stock = yf.Ticker(ticker_symbol)
-    info = stock.info
-    kgv = info.get("trailingPE")
-    kuv = info.get("priceToSalesTrailing12Months")
-    kbv = info.get("priceToBook")
-    marge = info.get("profitMargins")
-    beta = info.get("beta")
+def fundamental_analyse(fundamentaldaten, ticker_symbol):
+    sector = fundamentaldaten["sector"]
+    kgv = fundamentaldaten["kgv"]
+    forward_kgv = fundamentaldaten["forward_kgv"]
+    kuv = fundamentaldaten["kuv"]
+    kbv = fundamentaldaten["kbv"]
+    marge = fundamentaldaten["marge"]
+    beta = fundamentaldaten["beta"]
+    roe = fundamentaldaten["roe"]
+    debt_to_equity = fundamentaldaten["debt_to_equity"]
+    revenue_growth = fundamentaldaten["revenue_growth"]
+    earnings_growth = fundamentaldaten["earnings_growth"]
+
+    peg = None
+    if forward_kgv and earnings_growth and earnings_growth > 0:
+        peg = forward_kgv / (earnings_growth * 100)
+
+    sector_thresholds = {
+        "Technology":     {"kgv": 30, "kuv": 10, "marge": 0.10, "de_ratio": 150},
+        "Financial Services": {"kgv": 15, "kuv": 3, "marge": 0.15, "de_ratio": 300},
+        "Industrial":     {"kgv": 20, "kuv": 3, "marge": 0.10, "de_ratio": 200},
+        "Healthcare":     {"kgv": 25, "kuv": 6, "marge": 0.10, "de_ratio": 150},
+        "Consumer Defensive": {"kgv": 20, "kuv": 4, "marge": 0.08, "de_ratio": 250},
+        "Consumer Cyclical": {"kgv": 25, "kuv": 6, "marge": 0.08, "de_ratio": 200},
+    }
+    sector_config = sector_thresholds.get(sector, {"kgv": 20, "kuv": 4, "marge": 0.10, "de_ratio": 200})
 
     score = 0
-    if kgv and kgv < 15: score += 20
-    if kuv and kuv < 3: score += 20
-    if marge and marge > 0.15: score += 20
-    if beta and beta < 1.2: score += 20
-    ampel = "🟢" if score >= 60 else "🟡" if score >= 40 else "🔴"
+    max_score = 140
+
+    if kgv and kgv < sector_config["kgv"]:
+        score += 15
+    if forward_kgv and forward_kgv < sector_config["kgv"]:
+        score += 10
+    if peg and peg < 1.5:
+        score += 10
+    if kuv and kuv < sector_config["kuv"]:
+        score += 15
+    if marge and marge > sector_config["marge"]:
+        score += 15
+    if roe and roe > 0.15:
+        score += 15
+    if revenue_growth and revenue_growth > 0.07:
+        score += 15
+    if earnings_growth and earnings_growth > 0.07:
+        score += 15
+    if debt_to_equity and debt_to_equity < sector_config["de_ratio"]:
+        score += 10
+    if beta and beta < 1.2:
+        score += 10
+
+    ratio = score / max_score
+    if ratio >= 0.70:
+        ampel = "🟢"
+    elif ratio >= 0.45:
+        ampel = "🟡"
+    else:
+        ampel = "🔴"
 
     return {
         "Aktie": ticker_symbol,
-        "KGV": f"{kgv:.2f}" if kgv else "n/a",
-        "KUV": f"{kuv:.2f}" if kuv else "n/a",
-        "KBV": f"{kbv:.2f}" if kbv else "n/a",
+        "Sektor": sector,
+        "KGV": kgv,
+        "Forward KGV": forward_kgv,
+        "KUV": kuv,
+        "KBV": kbv,
         "Marge (%)": f"{marge*100:.1f}%" if marge else "n/a",
-        "Beta": f"{beta:.2f}" if beta else "n/a",
+        "ROE (%)": f"{roe*100:.1f}%" if roe else "n/a",
+        "PEG Ratio": peg,
+        "Beta": beta,
+        "Umsatzwachstum": revenue_growth,
+        "Gewinnwachstum": earnings_growth,
+        "Debt/Equity": debt_to_equity,
         "Score": score,
         "Ampel": ampel
     }
@@ -419,4 +471,93 @@ def analyse_kaufsignal_perioden(full_data: pd.DataFrame,
         "Perioden_Bewertung": perioden_bewertung,
         "Einzelbewertung": einzelbewertung
     }
+
+def lade_analystenbewertung(symbol):
+    ticker = yf.Ticker(symbol)
+    anal_data = {}
+
+    # Analysten-Empfehlungen (Buy/Hold/Sell)
+    try:
+        summary = ticker.recommendations_summary
+        # Falls summary nicht None und kein DataFrame, versuche Umwandlung
+        if summary is not None and not isinstance(summary, pd.DataFrame):
+            summary = pd.DataFrame(summary)
+        anal_data["summary"] = summary
+    except Exception as e:
+        anal_data["summary"] = None
+
+    # Historische Empfehlungen
+    try:
+        recs = ticker.recommendations
+        if recs is not None and not isinstance(recs, pd.DataFrame):
+            recs = pd.DataFrame(recs)
+        anal_data["recommendations"] = recs
+    except Exception as e:
+        anal_data["recommendations"] = None
+
+    # Tiefere Analyse wie Wachstum/Kennzahlen
+    try:
+        analysis = ticker.analysis
+        if analysis is not None and not isinstance(analysis, pd.DataFrame):
+            analysis = pd.DataFrame(analysis)
+        anal_data["analysis"] = analysis
+    except Exception as e:
+        anal_data["analysis"] = None
+
+    return anal_data
+
+
+def berechne_rating_bar(summary_df):
+    # Falls dict → zu DataFrame konvertieren
+    if isinstance(summary_df, dict):
+        summary_df = pd.DataFrame([summary_df])
+
+    # Falls summary_df None ist → sicher abfangen
+    if summary_df is None:
+        return {"Buy": 0, "Hold": 0, "Sell": 0}
+
+    # Falls DataFrame leer ist → sicher abfangen
+    if summary_df.empty:
+        return {"Buy": 0, "Hold": 0, "Sell": 0}
+
+    # typischerweise: "strongBuy", "buy", "hold", "sell", "strongSell"
+    row = summary_df.iloc[0]
+
+    return {
+        "Buy": row.get("buy", 0) + row.get("strongBuy", 0),
+        "Hold": row.get("hold", 0),
+        "Sell": row.get("sell", 0) + row.get("strongSell", 0),
+    }
+
+def zeichne_rating_gauge(rating_counts):
+    total = sum(rating_counts.values())
+    if total == 0:
+        buy_percent = 0
+    else:
+        buy_percent = rating_counts.get("Buy", 0) / total * 100
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=buy_percent,
+        title={'text': "Buy-Empfehlungen in %"},
+        delta={'reference': 50, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
+        gauge={
+            'axis': {'range': [None, 100]},
+            'bar': {'color': "green"},
+            'steps': [
+                {'range': [0, 33], 'color': "red"},
+                {'range': [33, 66], 'color': "orange"},
+                {'range': [66, 100], 'color': "green"}
+            ],
+            'threshold': {
+                'line': {'color': "black", 'width': 4},
+                'thickness': 0.75,
+                'value': buy_percent
+            }
+        }
+    ))
+
+    fig.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
+
+    st.plotly_chart(fig, use_container_width=True)
 
