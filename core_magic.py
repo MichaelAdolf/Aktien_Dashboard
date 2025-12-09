@@ -9,7 +9,7 @@ from ta.trend import ADXIndicator
 from ta.momentum import StochasticOscillator
 
 # ------------------------------------------------------
-# Themen aus der definierten Watchlist laden
+# Aktien aus der definierten Watchlist laden
 # ------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def lade_aktien(pfad="Watchlist.txt"):
@@ -30,7 +30,6 @@ def lade_aktien(pfad="Watchlist.txt"):
 
     return aktien
 
-    
 # ------------------------------------------------------
 # Lade Daten
 # ------------------------------------------------------
@@ -45,11 +44,22 @@ def lade_daten_aktie(symbol: str, period="3y") -> pd.DataFrame:
 # ------------------------------------------------------
 # Fundamentaldaten laden
 # ------------------------------------------------------
+@st.cache_data(show_spinner=False)
 def lade_fundamentaldaten(ticker_symbol):
     ticker = yf.Ticker(ticker_symbol)
     info = ticker.info
     fundamentaldaten = {
-        "KGV": info.get("trailingPE", "N/A"),
+        "sector": info.get("sector", "Unknown"),
+        "kgv": info.get("trailingPE"),
+        "forward_kgv": info.get("forwardPE"),
+        "kuv": info.get("priceToSalesTrailing12Months"),
+        "kbv": info.get("priceToBook"),
+        "marge": info.get("profitMargins"),
+        "beta": info.get("beta"),
+        "roe": info.get("returnOnEquity"),
+        "debt_to_equity": info.get("debtToEquity"),
+        "revenue_growth": info.get("revenueGrowth"),
+        "earnings_growth": info.get("earningsGrowth"),
         "Dividendenrendite": info.get("dividendYield", "N/A"),
         "Marktkapitalisierung": info.get("marketCap", "N/A"),
         "Gewinn je Aktie (EPS)": info.get("trailingEps", "N/A")
@@ -67,6 +77,143 @@ def lade_fundamentaldaten(ticker_symbol):
             elif mkt > 1e6:
                 fundamentaldaten["Marktkapitalisierung"] = f"{mkt / 1e6:.2f} Mio."
     return fundamentaldaten
+
+def klassifiziere_aktie(symbol, data, fundamentaldaten):
+    """
+    Gibt die Aktie einer Kategorie zu: Growth, Value, Zyklisch, Defensiv, Volatil, Momentum
+    """
+    ticker = yf.Ticker(symbol)
+    info = ticker.info
+
+    # --- Fundamentaldaten ---
+    sector = info.get("sector")
+    industry = info.get("industry")
+    marketcap = ticker.fast_info.get("market_cap") or info.get("marketCap")
+
+    # Fundamentaldaten
+    kgv = fundamentaldaten.get("KGV")
+    div = fundamentaldaten.get("Dividendenrendite (%)")
+    umsatz = fundamentaldaten.get("Umsatzwachstum")
+    gewinn = fundamentaldaten.get("Gewinnwachstum")
+
+    # Technische Daten
+    # ATR / Preis = Volatilität relativ
+    if "ATR" in data.columns:
+        volatilitaet = (data["ATR"].iloc[-1] / data["Close"].iloc[-1])
+    else:
+        volatilitaet = 0.02  # fallback
+
+    # Trendstärke als Momentum
+    momentum_20 = (data["Close"].iloc[-1] - data["Close"].iloc[-20]) / data["Close"].iloc[-20]
+
+    # Score-System
+    scores = {
+        "Growth": 0,
+        "Value": 0,
+        "Zyklisch": 0,
+        "Defensiv": 0,
+        "Volatil": 0,
+        "Momentum": 0
+    }
+
+    # ---------------------------------------------
+    # Growth Kriterien
+    # ---------------------------------------------
+    if umsatz and umsatz > 0.10: scores["Growth"] += 2
+    if gewinn and gewinn > 0.10: scores["Growth"] += 2
+    if volatilitaet > 0.03: scores["Growth"] += 1
+    if sector in ["Technology", "Consumer Cyclical"]: scores["Growth"] += 1
+    if momentum_20 > 0.10: scores["Growth"] += 1
+
+    # ---------------------------------------------
+    # Value Kriterien
+    # ---------------------------------------------
+    if kgv and kgv < 15: scores["Value"] += 2
+    if div and div > 2: scores["Value"] += 1
+    if volatilitaet < 0.02: scores["Value"] += 1
+    if sector in ["Financial Services", "Industrial"]: scores["Value"] += 1
+
+    # ---------------------------------------------
+    # Zyklisch
+    # ---------------------------------------------
+    if sector in ["Automobil", "Industrials", "Materials"]: scores["Zyklisch"] += 2
+    if volatilitaet > 0.025: scores["Zyklisch"] += 1
+
+    # ---------------------------------------------
+    # Defensiv
+    # ---------------------------------------------
+    if sector in ["Healthcare", "Utilities", "Consumer Defensive"]: scores["Defensiv"] += 2
+    if volatilitaet < 0.018: scores["Defensiv"] += 1
+    if div and div > 2.5: scores["Defensiv"] += 1
+
+    # ---------------------------------------------
+    # Volatil
+    # ---------------------------------------------
+    if volatilitaet > 0.05: scores["Volatil"] += 3
+    if marketcap and marketcap < 2e9: scores["Volatil"] += 2
+
+    # ---------------------------------------------
+    # Momentum
+    # ---------------------------------------------
+    if momentum_20 > 0.15: scores["Momentum"] += 2
+    if momentum_20 > 0.25: scores["Momentum"] += 2
+    if volatilitaet > 0.03: scores["Momentum"] += 1
+
+    # ---------------------------------------------
+    # Ergebnis: Kategorie mit höchstem Score
+    # ---------------------------------------------
+    kategorie = max(scores, key=scores.get)
+
+    return {
+        "Sektor": sector,
+        "Industrie": industry,
+        "Kategorie": kategorie,
+        "Scores": scores
+    }
+
+def erklaere_kategorie(kategorie: str) -> str:
+    """Gibt einen kurzen, verständlichen Erklärungstext zur Aktienkategorie zurück."""
+    
+    
+    texte = {
+        "Growth": (
+            "Wachstumsaktien (Growth) zeichnen sich durch ein starkes Umsatz- und "
+            "Gewinnwachstum aus. Sie investieren stark in Expansion, besitzen oft hohe "
+            "Volatilität und reagieren stark auf Marktstimmung. Typisch sind Tech- oder "
+            "Innovationsunternehmen mit überdurchschnittlichem Kursmomentum."
+        ),
+        "Value": (
+            "Value-Aktien sind unterbewertete Unternehmen mit stabilem Geschäftsmodell. "
+            "Sie weisen häufig niedrige Bewertungskennzahlen wie das KGV und eine solide "
+            "Dividendenrendite auf. Diese Aktien sind defensiver und weniger volatil."
+        ),
+        "Zyklisch": (
+            "Zyklische Aktien hängen stark vom Konjunkturverlauf ab. In Aufschwungphasen "
+            "performen sie besonders gut, während sie in Abschwüngen deutliche Verluste "
+            "erleiden können. Typisch sind Auto-, Industrie- oder Rohstoffunternehmen."
+        ),
+        "Defensiv": (
+            "Defensive Aktien sind krisenresistent und besitzen stabile Umsätze - unabhängig"
+            "vom Konjunkturzyklus. Sie gehören oft zu den Sektoren Gesundheit, "
+            "Versorger oder Basiskonsum und haben moderate Volatilität."
+        ),
+        "Volatil": (
+            "Volatile Aktien schwanken stark im Kurs. Sie besitzen hohe ATR-Werte, oft "
+            "eine geringe Marktkapitalisierung und reagieren stark auf Nachrichten. "
+            "Ideal für Trader, riskanter für langfristige Anleger."
+        ),
+        "Momentum": (
+            "Momentum-Aktien weisen starke und anhaltende Trends auf. Sie steigen oft "
+            "überproportional bei positiven Nachrichten und zeigen ein klares technisches "
+            "Trendverhalten (RSI, MACD, Breakouts)."
+        ),
+        "Unbekannt": (
+            "Kategorie konnte nicht eindeutig bestimmt werden. Es fehlen Informationen "
+            "oder die Aktie erfüllt gemischte Kriterien."
+        ),
+    }
+
+    return texte.get(kategorie, texte["Unbekannt"])
 
 # ------------------------------------------------------
 # Indikatoren berechnen
