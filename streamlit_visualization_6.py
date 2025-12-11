@@ -289,7 +289,20 @@ def plot_hautpchart (data, symbol, opt, version):
     #                             ("Resistance1", "red", "Resistance 1"), ("Resistance2", "red", "Resistance 2")]:
     #        if col in data.columns:
     #            fig.add_trace(go.Scatter(x=data.index, y=data[col], mode="lines", line=dict(dash='dot', color=color), name=name))
-    fig.update_layout(xaxis_title="Datum", yaxis_title="Preis (USD)")
+    fig.update_layout(
+        xaxis_title="Datum",
+        yaxis_title="Preis (USD)",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.3)",
+            bordercolor="rgba(0,0,0,0.15)",
+            borderwidth=1
+        )
+    )
     st.subheader(f"{symbol} Kurs")
     st.plotly_chart(fig, use_container_width=True, key=f"hauptchart_{version}")
 
@@ -325,7 +338,17 @@ def plot_Ichimoku(data, symbol, opt):
     fig.update_layout(
         title=f"Ichimoku – {symbol}",
         xaxis_title="Datum",
-        yaxis_title="Preis"
+        yaxis_title="Preis",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.3)",
+            bordercolor="rgba(0,0,0,0.15)",
+            borderwidth=1
+        )
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -336,7 +359,16 @@ def plot_macd(data, symbol, opt):
     macd_fig.add_trace(go.Scatter(x=data.index, y=data["MACD"], mode="lines", name="MACD"))
     macd_fig.add_trace(go.Scatter(x=data.index, y=data["MACD_Signal"], mode="lines", name="Signal"))
     macd_fig.add_trace(go.Bar(x=data.index, y=data["MACD_Hist"], name="Histogramm"))
-    macd_fig.update_layout(title=f"{symbol} MACD", xaxis_title="Datum")
+    macd_fig.update_layout(title=f"{symbol} MACD", xaxis_title="Datum", legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.3)",
+            bordercolor="rgba(0,0,0,0.15)",
+            borderwidth=1
+        ))
     st.plotly_chart(macd_fig, use_container_width=True)
 
 def plot_rsi(data, symbol, opt):
@@ -344,14 +376,34 @@ def plot_rsi(data, symbol, opt):
     rsi_fig.add_trace(go.Scatter(x=data.index, y=data["RSI"], mode="lines", name="RSI"))
     rsi_fig.add_hline(y=30, line_dash="dash", line_color="red", annotation_text="Überverkauft (30)", annotation_position="bottom right")
     rsi_fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Überkauft (70)", annotation_position="top right")
-    rsi_fig.update_layout(title=f"{symbol} RSI", xaxis_title="Datum", yaxis_range=[0, 100])
+    rsi_fig.update_layout(title=f"{symbol} RSI", xaxis_title="Datum", yaxis_range=[0, 100], 
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.3)",
+            bordercolor="rgba(0,0,0,0.15)",
+            borderwidth=1
+        ))
     st.plotly_chart(rsi_fig, use_container_width=True)
 
 def plot_stoch(data, symbol, opt):
     stoch_fig = go.Figure()
     stoch_fig.add_trace(go.Scatter(x=data.index, y=data["Stoch_%K"], mode="lines", name="%K"))
     stoch_fig.add_trace(go.Scatter(x=data.index, y=data["Stoch_%D"], mode="lines", name="%D"))
-    stoch_fig.update_layout(title=f"{symbol} Stochastic Oscillator", xaxis_title="Datum", yaxis_range=[0, 100])
+    stoch_fig.update_layout(title=f"{symbol} Stochastic Oscillator", xaxis_title="Datum", yaxis_range=[0, 100], 
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.3)",
+            bordercolor="rgba(0,0,0,0.15)",
+            borderwidth=1
+        ))
     st.plotly_chart(stoch_fig, use_container_width=True)
 
 def plot_adx(data, symbol, opt):
@@ -359,7 +411,17 @@ def plot_adx(data, symbol, opt):
     adx_fig.add_trace(go.Scatter(x=data.index, y=data["ADX"], mode="lines", name="ADX"))
     adx_fig.add_trace(go.Scatter(x=data.index, y=data["+DI"], mode="lines", name="+DI"))
     adx_fig.add_trace(go.Scatter(x=data.index, y=data["-DI"], mode="lines", name="-DI"))
-    adx_fig.update_layout(title=f"{symbol} ADX", xaxis_title="Datum")
+    adx_fig.update_layout(title=f"{symbol} ADX", xaxis_title="Datum",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.3)",
+            bordercolor="rgba(0,0,0,0.15)",
+            borderwidth=1
+        ))
     st.plotly_chart(adx_fig, use_container_width=True)
 
 def show_technical_metrics(data, st_output, title="📋 Technische Kennzahlen"):
@@ -742,7 +804,17 @@ def plot_priodenchart(data, symbol, opt, version, kaufperioden=None):
                     showlegend=False
                 ))
 
-    fig.update_layout(xaxis_title="Datum", yaxis_title="Preis (USD)")
+    fig.update_layout(xaxis_title="Datum", yaxis_title="Preis (USD)", 
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.3)",
+            bordercolor="rgba(0,0,0,0.15)",
+            borderwidth=1
+        ))
     st.plotly_chart(fig, use_container_width=True, key=f"Periodenchart_{version}")
 
 def zeige_analystenbewertung(symbol):
