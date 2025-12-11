@@ -121,8 +121,8 @@ def aktienseite(symbol):
         # ---------------------------------------------------------
         # 2️⃣ RECHTE SPALTE
         # ---------------------------------------------------------
-        with col2:
-            beispiel_kachel() 
+        #with col2:
+        #    beispiel_kachel() 
 
 
 
@@ -903,3 +903,4 @@ def beispiel_kachel():
         #st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
+
