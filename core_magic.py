@@ -27,7 +27,8 @@ def lade_aktien(pfad="Watchlist.txt"):
 
             name, ticker = line.split(",", 1)
             aktien.append((name.strip(), ticker.strip()))
-
+            
+    aktien.sort(key=lambda x: x[0].lower())  # Nach Name alphabetisch sortieren
     return aktien
 
 # ------------------------------------------------------
