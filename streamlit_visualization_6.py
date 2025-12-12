@@ -37,17 +37,17 @@ def home_page(watchlist):
 
     for name, symbol in watchlist:
         if st.button(f"{name} ({symbol})"):
-            st.session_state.page = symbol
+            st.session_state.page = (name, symbol) #Touple speichern
 
-def aktienseite(symbol): 
-    symbol = st.session_state.page
+def aktienseite(): 
+    name, symbol = st.session_state.page
 
     st.set_page_config(
     page_title="Aktien Dashboard",
     layout="wide"  # 💥 macht Seite 100% breit
     )
     
-    st.title(f"📊 {symbol} – Analyse")
+    st.title(f"📊 {name} – Analyse")
 
     max_period = "4y"
     try:
@@ -88,7 +88,7 @@ def aktienseite(symbol):
         # ---------------------------------------------------------
         with col1:
             with st.container(border=True):
-                plot_hautpchart(data, symbol, opt, 1)
+                plot_hautpchart(data, name, opt, 1)
 
         # ---------------------------------------------------------
         # 2️⃣ RECHTE SPALTE
@@ -121,10 +121,8 @@ def aktienseite(symbol):
         # ---------------------------------------------------------
         # 2️⃣ RECHTE SPALTE
         # ---------------------------------------------------------
-        #with col2:
-        #    beispiel_kachel() 
-
-
+        with col2:
+            beispiel_kachel()
 
     with tab_signaldetail:
         # ---------------------------------------------------------
@@ -143,7 +141,7 @@ def aktienseite(symbol):
             df_details["Start"] = pd.to_datetime(df_details["Start"])
             df_details["Ende"] = pd.to_datetime(df_details["Ende"])
             st.subheader("Kennzeichnung der Perioden")
-            plot_priodenchart(data, symbol, opt, 1, kaufperioden=df_details)
+            plot_priodenchart(data, name, opt, 1, kaufperioden=df_details)
 
         with st.container(border=True):
             st.subheader("📊 Übersicht der technischen Signale")
@@ -169,7 +167,7 @@ def aktienseite(symbol):
     with tab_charts:
         with st.container(border=True):
             st.subheader("Gesamtübersicht")
-            plot_hautpchart(data, symbol, opt, 2)
+            plot_hautpchart(data, name, opt, 2)
 
         col1, col2 = st.columns([1,1])
         # ---------------------------------------------------------
@@ -210,7 +208,7 @@ def aktienseite(symbol):
         # ---------------------------------------------------------
         # Hauptchart
         # ---------------------------------------------------------
-        plot_Ichimoku(data, symbol, opt)
+        plot_Ichimoku(data, name, opt)
 
 
     with tab_fundamentals:
@@ -272,7 +270,7 @@ def anzeige_optionen_main():
         "ma50": st.sidebar.checkbox("MA50 anzeigen", True),
     }
 
-def plot_hautpchart (data, symbol, opt, version):
+def plot_hautpchart (data, name, opt, version):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=data.index, y=data["Close"], mode="lines", name="Schlusskurs"))
     if opt["ma10"]:
@@ -303,7 +301,7 @@ def plot_hautpchart (data, symbol, opt, version):
             borderwidth=1
         )
     )
-    st.subheader(f"{symbol} Kurs")
+    st.subheader(f"{name} Kurs")
     st.plotly_chart(fig, use_container_width=True, key=f"hauptchart_{version}")
 
 
@@ -543,7 +541,7 @@ def fundamental_interpretation(result):
     beta = result["Beta"]
     score = result["Score"]
 
-    st.subheader(f"Fundamentale Einschätzung: {aktie}")
+    st.subheader(f"Fundamentale Einschätzung:")
 
     # Ampel-Interpretation
     if ampel == "🟢":
@@ -900,7 +898,4 @@ def beispiel_kachel():
             plot_bgcolor='rgba(255,255,255,1)',
         )
 
-        #st.plotly_chart(fig, use_container_width=True)
-
         st.markdown("</div>", unsafe_allow_html=True)
-
