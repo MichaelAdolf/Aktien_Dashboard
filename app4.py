@@ -17,14 +17,14 @@ from core_magic import (
     lade_aktien
 )
 
-from streamlit_visualization_6 import (
+from streamlit_visualization_8 import (
     go_to,
     home_page,
     aktienseite
 )
 
-THEMEN = lade_aktien()
-if not THEMEN:
+Aktien = lade_aktien()
+if not Aktien:
     st.warning("Datei Watchlist.txt wurde nicht gefunden oder ist leer.")
 
 # ------------------------------------------------------
@@ -37,15 +37,14 @@ if "page" not in st.session_state:
 # Home
 # ------------------------------------------------------
 if st.session_state.page == "home":
-    home_page(THEMEN)
+    home_page(Aktien)
 
 # ------------------------------------------------------
 # Aktienseite
 # ------------------------------------------------------
 else:
-    symbol = st.session_state.page
-    aktienseite(symbol)
+    aktienseite()
 
     # Navigation zurück
-    if st.button("⬅️ Zurück zur Startseite"):
+    if st.button("⬅️ Zurück nach Oben und zur Startseite"):
         go_to("home")
