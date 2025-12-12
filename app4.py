@@ -17,7 +17,7 @@ from core_magic import (
     lade_aktien
 )
 
-from streamlit_visualization_8 import (
+from streamlit_visualization_6 import (
     go_to,
     home_page,
     aktienseite
@@ -48,3 +48,4 @@ else:
     # Navigation zurück
     if st.button("⬅️ Zurück nach Oben und zur Startseite"):
         go_to("home")
+
