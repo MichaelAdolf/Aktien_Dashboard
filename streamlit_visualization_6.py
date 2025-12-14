@@ -6,7 +6,7 @@ import pandas as pd
 from ta.trend import ADXIndicator
 from ta.momentum import StochasticOscillator
 
-from core_magic_3 import (
+from core_magic import (
     lade_daten_aktie,
     berechne_indikatoren,
     lade_fundamentaldaten,
@@ -14,7 +14,7 @@ from core_magic_3 import (
     erklaere_kategorien
 )
 
-from signals_2 import (
+from signals import (
     fundamental_analyse,
     RSI_signal, 
     macd_signal, 
@@ -914,4 +914,5 @@ def beispiel_kachel():
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
+
 
