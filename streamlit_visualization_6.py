@@ -6,21 +6,23 @@ import pandas as pd
 from ta.trend import ADXIndicator
 from ta.momentum import StochasticOscillator
 
-from core_magic import (
+from core_magic_3 import (
     lade_daten_aktie,
     berechne_indikatoren,
     lade_fundamentaldaten,
     klassifiziere_aktie,
-    erklaere_kategorie
+    erklaere_kategorien
 )
 
-from signals import (
+from signals_2 import (
     fundamental_analyse,
     RSI_signal, 
     macd_signal, 
     adx_signal, 
     stochastic_signal, 
     bollinger_signal,
+    berechne_alle_signale,
+    berechne_gewichtete_signale,
     kombiniertes_signal,
     analyse_kaufsignal_perioden,
     lade_analystenbewertung,
@@ -62,7 +64,7 @@ def aktienseite():
     summary_df = analysten_daten["summary"]
     rating_counts = berechne_rating_bar(summary_df)
     klassifikation = klassifiziere_aktie(symbol, data_full, fundamentaldaten)
-    erklaerung = erklaere_kategorie(klassifikation["Kategorie"])
+    erklaerung = erklaere_kategorien(klassifikation["Profil"], klassifikation["Trading_Status"])
 
     
     # Sidebar-Parameter laden
@@ -100,7 +102,8 @@ def aktienseite():
                     zeichne_rating_gauge(rating_counts)
 
                 st.subheader("📌 Klassifizierung der Aktie:")
-                st.metric("Aktien-Kategorie", klassifikation["Kategorie"])
+                st.metric("Profil:", klassifikation["Profil"])
+                st.metric("Trading Status:", klassifikation["Trading_Status"])
                 with st.expander("Details zur Aktuen-Kathegorie:"):
                     st.write(erklaerung)
          # --- 2 Spalten Layout ---
@@ -111,6 +114,11 @@ def aktienseite():
         # ---------------------------------------------------------
         with col1:
             with st.container(border=True):
+                st.subheader("Beispiel-Übersicht:")
+                signals = berechne_alle_signale(data)
+                trading_sig = berechne_gewichtete_signale(signals, klassifikation["Profil"], klassifikation["Trading_Status"])
+                st.metric("Trading Signal:", trading_sig)
+
                 st.subheader("🏦 Fundamental Übersicht:")
                 fundamental_summary(data_fund)
 
@@ -647,7 +655,7 @@ def zeige_technische_signale(data):
     st.table(df_signale)
 
     # Kombiniertes Signal berechnen
-    gesamt_signal, alle_signale = kombiniertes_signal(data)
+    gesamt_signal, alle_signale, gesamtscore = kombiniertes_signal(data)
 
     st.markdown("---")
     st.subheader("🧩 Kombiniertes Handelssignal")
@@ -655,12 +663,13 @@ def zeige_technische_signale(data):
 
     # Detailansicht
     with st.expander("Details zu den Einzelsignalen"):
+        st.write(gesamtscore)
         for name, sig in alle_signale.items():
             st.write(f"**{name}**: {sig}")
 
 def zeige_swingtrading_signal(data):
     # Kombiniertes Signal berechnen
-    gesamt_signal, alle_signale = kombiniertes_signal(data)
+    gesamt_signal, alle_signale, geasmtscore = kombiniertes_signal(data)
 
     st.write(gesamt_signal)
 
@@ -782,11 +791,17 @@ def plot_priodenchart(data, symbol, opt, version, kaufperioden=None):
     # Kaufperioden als grüne Bereiche einzeichnen
     if kaufperioden is not None and not kaufperioden.empty:
         for _, row in kaufperioden.iterrows():
-            if row["Signal"]:  # Nur positive Kaufperioden
+                # Farbe je nach Signal
+                if row["Signal"]:
+                    fill_color = "green"
+                    line_color = "green"
+                else:
+                    fill_color = "lightgrey"  # hellgrau für "false"
+                    line_color = "grey"
                 fig.add_vrect(
                     x0=row["Start"],
                     x1=row["Ende"],
-                    fillcolor="green",
+                    fillcolor=fill_color,
                     opacity=0.2,
                     layer="below",
                     line_width=0,
@@ -797,7 +812,7 @@ def plot_priodenchart(data, symbol, opt, version, kaufperioden=None):
                     x=data.index[periode_mask],
                     y=data["Close"][periode_mask],
                     mode="lines",
-                    line=dict(color="green", width=3),
+                    line=dict(color=line_color, width=3),
                     name="Kaufperiode",
                     showlegend=False
                 ))
@@ -899,3 +914,4 @@ def beispiel_kachel():
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
+
