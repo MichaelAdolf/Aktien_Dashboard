@@ -3,6 +3,9 @@ import yfinance as yf
 import numpy as np  # nur wenn du numpy Funktionen brauchst
 import plotly.graph_objects as go
 import streamlit as st
+from ta.momentum import RSIIndicator, StochasticOscillator
+from ta.trend import MACD, ADXIndicator
+from ta.volatility import BollingerBands
 
 def fundamental_analyse(fundamentaldaten, ticker_symbol):
     sector = fundamentaldaten["sector"]
@@ -132,8 +135,12 @@ def bollinger_signal(data: pd.DataFrame) -> str:
     # --- Haltesignal
     else:
         return "🟡 Bollinger Signal - Haltesignal"
-
-
+    
+def berechne_bollinger_abstand(data, window=20, window_dev=2):
+    bollinger = BollingerBands(close=data["Close"], window=window, window_dev=window_dev)
+    # Abstand Close zum unteren Band, normalisiert: (Close - LowerBand) / Close
+    bollinger_lband = bollinger.bollinger_lband()
+    return float(((data["Close"].iloc[-1] - bollinger_lband.iloc[-1]) / data["Close"].iloc[-1]))
 
 def RSI_signal(data):
     """
@@ -147,7 +154,10 @@ def RSI_signal(data):
         return "🔴 RSI Signal - Verkaufssignal"
     else:
         return "🟡 RSI Signal - Haltesignal"
-
+    
+def berechne_rsi(data, window=14):
+    rsi = RSIIndicator(close=data["Close"], window=window)
+    return float(rsi.rsi().iloc[-1])
 
 def macd_signal(data):
     """
@@ -201,6 +211,10 @@ def macd_signal(data):
     else:
         return "🟡 MACD Signal - Haltesignal"
 
+def berechne_macd(data, window_slow=26, window_fast=12, window_sign=9):
+    macd = MACD(close=data["Close"], window_slow=window_slow, window_fast=window_fast, window_sign=window_sign)
+    # MACD-Diff als Trend-Impuls (positiv = bullish)
+    return float(macd.macd_diff().iloc[-1])
 
 def adx_signal(data, adx_threshold=25):
     """
@@ -217,6 +231,9 @@ def adx_signal(data, adx_threshold=25):
     else:
         return "🔴 ADX Signal - Abwärtstrend (ADX stark, +DI < -DI)"
 
+def berechne_adx(data, window=14):
+    adx = ADXIndicator(high=data["High"], low=data["Low"], close=data["Close"], window=window)
+    return float(adx.adx().iloc[-1])
 
 def stochastic_signal(data: pd.DataFrame) -> str:
     """
@@ -244,6 +261,163 @@ def stochastic_signal(data: pd.DataFrame) -> str:
 
     else:
         return "🟡 Stochastic Oscillator - Haltesignal"
+    
+def berechne_stochastic(data, window=14, smooth_window=3):
+    stochastic = StochasticOscillator(high=data["High"], low=data["Low"], close=data["Close"], window=window, smooth_window=smooth_window)
+    return float(stochastic.stoch().iloc[-1])
+
+def berechne_alle_signale(data):
+    signale = {}
+    try:
+        signale["RSI"] = berechne_rsi(data)
+    except Exception as e:
+        print(f"RSI Berechnung fehlgeschlagen: {e}")
+        signale["RSI"] = 50  # Neutralwert als Fallback
+
+    try:
+        signale["MACD"] = berechne_macd(data)
+    except Exception as e:
+        print(f"MACD Berechnung fehlgeschlagen: {e}")
+        signale["MACD"] = 0
+
+    # ADX
+    try:
+        signale["ADX"] = berechne_adx(data)
+    except Exception as e:
+        print(f"ADX Berechnung fehlgeschlagen: {e}")
+        signale["ADX"] = 20
+
+    # Bollinger Band Abstand
+    try:
+        signale["Bollinger"] = berechne_bollinger_abstand(data)
+    except Exception as e:
+        print(f"Bollinger Berechnung fehlgeschlagen: {e}")
+        signale["Bollinger"] = 0.5
+
+    # Stochastic
+    try:
+        signale["Stochastic"] = berechne_stochastic(data)
+    except Exception as e:
+        print(f"Stochastic Berechnung fehlgeschlagen: {e}")
+        signale["Stochastic"] = 50
+
+    return signale
+    
+signal_gewichtung = {
+    "Growth": {
+        "RSI": 1.0,
+        "MACD": 1.0,
+        "Bollinger": 0.8,
+        "ADX": 0.7,
+        "Stochastic": 0.8
+    },
+    "Value": {
+        "RSI": 0.7,
+        "MACD": 0.5,
+        "Bollinger": 1.0,
+        "ADX": 0.4,
+        "Stochastic": 0.9
+    },
+    "Zyklisch": {
+        "RSI": 0.9,
+        "MACD": 1.0,
+        "Bollinger": 0.7,
+        "ADX": 1.0,
+        "Stochastic": 0.6
+    },
+    "Defensiv": {
+        "RSI": 0.6,
+        "MACD": 0.5,
+        "Bollinger": 1.0,
+        "ADX": 0.4,
+        "Stochastic": 0.7
+    },
+        "Keine": {  # Falls keine Kategorie zugewiesen wird
+        "RSI": 0.5,
+        "MACD": 0.5,
+        "Bollinger": 0.5,
+        "ADX": 0.5,
+        "Stochastic": 0.5
+    }
+}
+
+trading_status_modifikator = {
+    "Momentum": {
+        "Trend_Signale": 1.2,   # erhöhe Gewicht für Trend-Indikatoren
+        "Volatilitaet_Signale": 0.8
+    },
+    "Volatil": {
+        "Trend_Signale": 0.8,
+        "Volatilitaet_Signale": 1.2
+    },
+    "Keine": {
+        "Trend_Signale": 1.0,
+        "Volatilitaet_Signale": 1.0
+    }
+}
+
+def berechne_gewichtete_signale(signale, profil, trading_status):
+    """
+    Berechnet einen Gesamtwert aus technischen Signalen, gewichtet nach Profil und Trading Status.
+
+    signale: dict, z.B. {"RSI": 30, "MACD": 0.5, "ADX": 25, "Bollinger": 1.1, "Stochastic": 70}
+    profil: str, z.B. "Growth"
+    trading_status: str, z.B. "Momentum"
+
+    Rückgabe: float, Gesamtbewertung (höher = stärkeres Kaufsignal)
+    """
+
+    # Gewichtungen laden, fallback auf "Keine"
+    prof_weights = signal_gewichtung.get(profil, signal_gewichtung["Keine"])
+    ts_mod = trading_status_modifikator.get(trading_status, trading_status_modifikator["Keine"])
+
+    # Indikatoren nach Typ sortieren
+    trend_signale = ["RSI", "MACD", "ADX"]
+    volatil_signale = ["Bollinger", "Stochastic"]
+
+    gesamt_score = 0.0
+
+    for signal_name, wert in signale.items():
+        gewicht = prof_weights.get(signal_name, 0.5)  # default Gewichtung 0.5
+
+        if signal_name in trend_signale:
+            gewicht *= ts_mod["Trend_Signale"]
+        elif signal_name in volatil_signale:
+            gewicht *= ts_mod["Volatilitaet_Signale"]
+
+        # **Signalwerte müssen normiert / skaliert sein!**
+        # Hier ein einfaches Beispiel für Interpretation:
+        # RSI: Nähe 30 = Kaufsignal, Nähe 70 = Verkaufssignal
+        # MACD: Positiv = Trend nach oben, Negativ = Trend nach unten
+        # ADX: Je höher, desto stärker der Trend (positive Richtung kann man gesondert auswerten)
+        # Bollinger: Abstand von Mittelwert (z.B. unteres Band = Kauf)
+        # Stochastic: ähnlich RSI, Nähe 20 = Kauf, Nähe 80 = Verkauf
+
+        # Für Demo nehmen wir an, dass niedrige Werte bei RSI & Stochastic positiv sind,
+        # positive MACD Werte positiv sind und höhere ADX Werte positiv sind,
+        # Bollinger als Abstand zum unteren Band (>=1 positiv).
+
+        if signal_name == "RSI":
+            # Kaufsignal, wenn RSI < 30
+            signal_score = max(0, (30 - wert) / 30)  # 1 wenn RSI=0, 0 wenn RSI=30+
+        elif signal_name == "Stochastic":
+            signal_score = max(0, (20 - wert) / 20)  # 1 wenn 0, 0 wenn >=20
+        elif signal_name == "MACD":
+            signal_score = max(0, wert)  # positiv ist gut
+        elif signal_name == "ADX":
+            signal_score = min(wert / 50, 1)  # ADX max 50, >25 stark
+        elif signal_name == "Bollinger":
+            # z.B. Abstand unteres Band: wenn <1, dann gut
+            # Wir nehmen Wert < 1 als Kaufsignal
+            signal_score = max(0, 1 - wert)
+        else:
+            signal_score = 0.5  # Neutral fallback
+
+        gesamt_score += gewicht * signal_score
+
+    return gesamt_score
+
+
     
 def kombiniertes_signal(data: pd.DataFrame):
     """
@@ -294,10 +468,7 @@ def kombiniertes_signal(data: pd.DataFrame):
     else:
         finale_entscheidung = "🟡 Halten"
 
-    # Debug-Ausgabe (optional)
-    #print(f"Kombinierter Score: {gesamt_score:.2f} → {finale_entscheidung}")
-
-    return finale_entscheidung, signale
+    return finale_entscheidung, signale, gesamt_score
 
 def cluster_buy_signal_periods(kaufsignale_df: pd.DataFrame, max_gap_days: int = 5):
     if "Datum" not in kaufsignale_df.columns:
@@ -429,7 +600,7 @@ def analyse_kaufsignal_perioden(full_data: pd.DataFrame,
 
     for i in range(min_len_window, len(full_data)):
         fenster = full_data.iloc[:i+1]
-        entscheidung, einzelsignale = kombiniertes_signal(fenster)  # Deine Signalgenerierung
+        entscheidung, einzelsignale, gesamtscore = kombiniertes_signal(fenster)  # Deine Signalgenerierung
         datum = fenster.index[-1]
         signale_liste.append({"Datum": datum, "Entscheidung": entscheidung, **einzelsignale})
 
