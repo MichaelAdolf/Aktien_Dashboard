@@ -43,9 +43,10 @@ if st.session_state.page == "home":
 # Aktienseite
 # ------------------------------------------------------
 else:
+    #symbol = st.session_state.page
+    
     aktienseite()
 
     # Navigation zurück
     if st.button("⬅️ Zurück nach Oben und zur Startseite"):
         go_to("home")
-
